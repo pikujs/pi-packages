@@ -220,6 +220,32 @@ describe("describeBashPathGate", () => {
     expect((result as GateDescriptor).preCheck?.state).toBe("deny");
   });
 
+  it("routes a bare redirect destination the existence probe cannot see to path_write", async () => {
+    // A redirect to a non-existent bare filename (#785 / ADR-0009 residual):
+    // the existence probe cannot see a file a redirect is about to create, so
+    // the destination must be emitted unconditionally on path_write rather than
+    // dropped silently by probeBareToken.
+    const resolver = makePathDispatchResolver(
+      {
+        "newfile.txt": makeCheckResult({ state: "ask", matchedPattern: "*" }),
+      },
+      makeCheckResult({ state: "deny" }),
+    );
+    const result = (await describeGate(
+      makeTcc({
+        input: { command: "echo hi > newfile.txt" },
+        toolName: "bash",
+      }),
+      resolver,
+    )) as GateDescriptor;
+
+    expect(resolver.resolve).toHaveBeenCalledWith(
+      expect.objectContaining({ surface: "path_write" }),
+    );
+    expect(result.surface).toBe("path_write");
+    expect(result.decision.value).toBe("newfile.txt");
+  });
+
   it("returns null when all tokens match only the universal default", async () => {
     const result = await describeGate(
       makeTcc(),

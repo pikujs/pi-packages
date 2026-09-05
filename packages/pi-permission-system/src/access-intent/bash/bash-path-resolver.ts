@@ -541,6 +541,30 @@ export class BashPathResolver {
     const result: BashPathRuleCandidate[] = [];
 
     for (const { token, base, effect } of candidates) {
+      // A redirect destination is a write target even when bare or not yet
+      // existing: the existence probe cannot see a file a redirect is about
+      // to create (ADR 0009 / #785). Write-proven destinations bypass the
+      // shape classifiers and the existence probe; every other candidate
+      // follows the ordinary path (#807 residual).
+      if (effect.effect === "write") {
+        const path = this.buildRuleCandidatePath(token, base);
+        const matchValues = path.matchValues();
+        if (matchValues.length === 0) continue;
+        const key = matchValues.join("\0");
+        const index = seen.get(key);
+        if (index !== undefined) {
+          const existing = result[index];
+          result[index] = {
+            ...existing,
+            effect: mergeTokenEffects(existing.effect, effect),
+          };
+          continue;
+        }
+        seen.set(key, result.length);
+        result.push({ token, path, effect });
+        continue;
+      }
+
       const shaped = classifyTokenAsRuleCandidate(
         token,
         this.normalizer.flavor,
